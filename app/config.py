@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     groq_api_key: str = Field(..., alias="GROQ_API_KEY")
     router_model: str = Field("llama-3.1-8b-instant", alias="ROUTER_MODEL")
 
+    # Embeddings (OpenAI-compatible — swap base_url for any provider)
+    embed_api_key: str = Field(..., alias="EMBED_API_KEY")
+    embed_base_url: str = Field("https://api.openai.com/v1", alias="EMBED_BASE_URL")
+    embed_model: str = Field("text-embedding-3-small", alias="EMBED_MODEL")
+
     # Pinecone
     pinecone_api_key: str = Field(..., alias="PINECONE_API_KEY")
     pinecone_index_name: str = Field("ai-agent-index", alias="PINECONE_INDEX_NAME")

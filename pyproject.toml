@@ -20,7 +20,7 @@ dependencies = [
     "groq>=0.9.0",
     "openai>=1.35.0",            # DeepSeek SDK target
     # Vector store
-    "pinecone-client>=3.0",
+    "pinecone>=3.0",
     # Web search
     "tavily-python>=0.3.0",
     # Database
@@ -69,7 +69,7 @@ target-version = "py311"
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 ignore_missing_imports = true
 

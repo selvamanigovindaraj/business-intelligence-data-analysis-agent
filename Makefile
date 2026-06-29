@@ -1,4 +1,11 @@
-.PHONY: check build up down logs hooks
+.PHONY: check build up down logs hooks install
+
+.venv/.installed: pyproject.toml
+	uv venv
+	uv pip install -e ".[dev]"
+	@touch .venv/.installed
+
+install: .venv/.installed
 
 check:
 	uv run ruff check app tests
@@ -20,5 +27,5 @@ down:
 logs:
 	docker compose logs -f
 
-hooks:
+hooks: .venv/.installed
 	uv run pre-commit install

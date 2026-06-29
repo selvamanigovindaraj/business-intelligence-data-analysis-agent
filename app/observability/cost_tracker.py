@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 # Approximate pricing per 1M tokens (USD)
 PRICE_PER_M: dict[str, dict[str, float]] = {
     # DeepSeek
