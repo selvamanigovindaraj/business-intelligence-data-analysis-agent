@@ -7,10 +7,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # LLM
-    anthropic_api_key: str = Field(..., alias="ANTHROPIC_API_KEY")
-    llm_model: str = "claude-sonnet-4-6"
-    router_model: str = "claude-haiku-4-5-20251001"
+    # DeepSeek — generation (OpenAI-compatible endpoint)
+    deepseek_api_key: str = Field(..., alias="DEEPSEEK_API_KEY")
+    deepseek_base_url: str = Field("https://api.deepseek.com", alias="DEEPSEEK_BASE_URL")
+    llm_model: str = Field("deepseek-chat", alias="LLM_MODEL")
+
+    # Groq — fast routing / lightweight calls
+    groq_api_key: str = Field(..., alias="GROQ_API_KEY")
+    router_model: str = Field("llama-3.1-8b-instant", alias="ROUTER_MODEL")
 
     # Pinecone
     pinecone_api_key: str = Field(..., alias="PINECONE_API_KEY")

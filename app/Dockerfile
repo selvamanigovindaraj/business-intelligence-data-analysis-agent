@@ -6,7 +6,7 @@ WORKDIR /app
 RUN pip install uv
 
 # Copy dependency files
-COPY pyproject.toml .
+COPY pyproject.toml README.md ./
 
 # Install dependencies (no editable install for production)
 RUN uv pip install --system --no-cache .

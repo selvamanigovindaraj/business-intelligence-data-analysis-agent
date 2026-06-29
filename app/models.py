@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import StrEnum
+from typing import Any
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -17,7 +18,7 @@ class Message(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     role: Role
     content: str
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ConversationRequest(BaseModel):
@@ -36,7 +37,7 @@ class ConversationResponse(BaseModel):
 class SourceDocument(BaseModel):
     id: str
     content: str
-    metadata: dict = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
     score: float | None = None
 
 
