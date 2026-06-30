@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from langchain_core.documents import Document
 
@@ -9,15 +9,13 @@ from app.components.retriever import QdrantRetriever
 
 async def test_retrieve_returns_documents() -> None:
     with (
-        patch("app.components.retriever.AsyncQdrantClient") as mock_qdrant,
-        patch("app.components.retriever.OpenAIEmbeddings") as mock_emb,
+        patch("app.components.retriever.AsyncQdrantClient"),
+        patch("app.components.retriever.OpenAIEmbeddings"),
+        patch("app.components.retriever.QdrantVectorStore") as mock_vs_cls,
     ):
-        mock_client = AsyncMock()
-        mock_qdrant.return_value = mock_client
-        mock_emb.return_value.aembed_query = AsyncMock(return_value=[0.1] * 1536)
-        mock_response = MagicMock()
-        mock_response.points = [MagicMock(id="1", score=0.9, payload={"text": "hello world"})]
-        mock_client.query_points.return_value = mock_response
+        mock_store = AsyncMock()
+        mock_vs_cls.return_value = mock_store
+        mock_store.asimilarity_search.return_value = [Document(page_content="hello world")]
 
         retriever = QdrantRetriever()
         docs = await retriever.retrieve("test query", k=1)
@@ -25,22 +23,20 @@ async def test_retrieve_returns_documents() -> None:
         assert len(docs) == 1
         assert isinstance(docs[0], Document)
         assert docs[0].page_content == "hello world"
-        mock_client.query_points.assert_called_once()
+        mock_store.asimilarity_search.assert_called_once_with("test query", k=1)
 
 
 async def test_add_documents_upserts() -> None:
     with (
-        patch("app.components.retriever.AsyncQdrantClient") as mock_qdrant,
-        patch("app.components.retriever.OpenAIEmbeddings") as mock_emb,
+        patch("app.components.retriever.AsyncQdrantClient"),
+        patch("app.components.retriever.OpenAIEmbeddings"),
+        patch("app.components.retriever.QdrantVectorStore") as mock_vs_cls,
     ):
-        mock_client = AsyncMock()
-        mock_qdrant.return_value = mock_client
-        mock_emb.return_value.aembed_documents = AsyncMock(return_value=[[0.1] * 1536])
+        mock_store = AsyncMock()
+        mock_vs_cls.return_value = mock_store
 
+        doc = Document(page_content="hello", metadata={"source": "test"})
         retriever = QdrantRetriever()
-        await retriever.add_documents([Document(page_content="hello", metadata={"source": "test"})])
+        await retriever.add_documents([doc])
 
-        mock_client.upsert.assert_called_once()
-        points = mock_client.upsert.call_args.kwargs["points"]
-        assert points[0].payload["text"] == "hello"
-        assert points[0].payload["source"] == "test"
+        mock_store.aadd_documents.assert_called_once_with([doc])
