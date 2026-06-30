@@ -65,10 +65,52 @@ async def test_sql_generator_node_returns_sql() -> None:
         mock_llm.with_structured_output.assert_called_once_with(SqlResult, method="json_mode")
 
 
+async def test_sql_executor_node_returns_rows() -> None:
+    with (
+        patch("app.agents.sql_graph.QdrantRetriever"),
+        patch("app.agents.sql_graph.ChatOpenAI"),
+        patch("app.agents.sql_graph.SqlExecutorTool") as mock_tool_cls,
+    ):
+        mock_tool = AsyncMock()
+        mock_tool_cls.return_value = mock_tool
+        mock_tool._arun.return_value = [{"id": 1, "company_name": "Acme"}]
+
+        graph = SqlGraph()
+        result = await graph._sql_executor_node({"sql": "SELECT * FROM customers LIMIT 1"})
+
+        assert result["rows"] == [{"id": 1, "company_name": "Acme"}]
+        mock_tool._arun.assert_awaited_once_with("SELECT * FROM customers LIMIT 1")
+
+
+async def test_result_explainer_node_returns_answer() -> None:
+    with (
+        patch("app.agents.sql_graph.QdrantRetriever"),
+        patch("app.agents.sql_graph.ChatOpenAI") as mock_llm_cls,
+    ):
+        mock_llm = MagicMock()
+        mock_llm_cls.return_value = mock_llm
+        mock_llm.with_structured_output.return_value = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.content = "There is 1 customer: Acme."
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+
+        graph = SqlGraph()
+        state = {
+            "question": "How many customers?",
+            "sql": "SELECT count(*) FROM customers",
+            "rows": [{"count": 1}],
+        }
+        result = await graph._result_explainer_node(state)
+
+        assert result["answer"] == "There is 1 customer: Acme."
+        mock_llm.ainvoke.assert_awaited_once()
+
+
 async def test_stream_emits_result_then_done() -> None:
     with (
         patch("app.agents.sql_graph.QdrantRetriever") as mock_retriever_cls,
         patch("app.agents.sql_graph.ChatOpenAI") as mock_llm_cls,
+        patch("app.agents.sql_graph.SqlExecutorTool") as mock_tool_cls,
     ):
         mock_retriever = AsyncMock()
         mock_retriever_cls.return_value = mock_retriever
@@ -86,6 +128,13 @@ async def test_stream_emits_result_then_done() -> None:
         mock_chain.ainvoke.return_value = SqlResult(
             sql="SELECT * FROM products", explanation="Lists all products."
         )
+        mock_response = MagicMock()
+        mock_response.content = "There are 5 products in the catalog."
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+
+        mock_tool = AsyncMock()
+        mock_tool_cls.return_value = mock_tool
+        mock_tool._arun.return_value = [{"product_id": 1, "product_name": "Chai"}]
 
         graph = SqlGraph()
         events: list[dict[str, object]] = []
@@ -97,4 +146,6 @@ async def test_stream_emits_result_then_done() -> None:
         assert len(events) == 2  # result, done
         assert events[0]["event"] == "result"
         assert events[0]["sql"] == "SELECT * FROM products"
+        assert events[0]["answer"] == "There are 5 products in the catalog."
+        assert events[0]["rows"] == [{"product_id": 1, "product_name": "Chai"}]
         assert events[1]["event"] == "done"
