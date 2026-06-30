@@ -41,7 +41,20 @@ python scripts/seed.py
 
 ## Architecture
 
-The request lifecycle is:
+### Chat stream (SQL generation)
+
+```text
+HTTP POST /api/v1/chat/stream
+  → app/routers/chat.py              # parse ChatStreamRequest, pull SqlGraph from app.state
+  → app/agents/sql_graph.py          # LangGraph pipeline
+      → schema_retriever node:  QdrantRetriever.retrieve(question, k=5) → list[TableSchema]
+      → sql_generator node:     DeepSeek via llm.with_structured_output(SqlResult, method="json_mode")
+  → SSE stream: {"event": "result", "sql": "...", "explanation": "..."} then {"event": "done"}
+```
+
+`SqlGraph` is instantiated once at lifespan startup (`app.state.sql_graph`) and reused across requests.
+
+### General chat (adaptive routing)
 
 ```text
 HTTP POST /api/v1/chat
@@ -70,15 +83,23 @@ HTTP POST /api/v1/chat
 
 - `AgentState` (in `adaptive_router.py`) is the LangGraph state dict — all inter-node data passes through it.
 - `RouteDecision` (in `models.py`) is a `StrEnum`; the router node returns one of its values to control graph branching.
+- `SqlGraph` uses `llm.with_structured_output(SqlResult, method="json_mode")` — `method="json_mode"` avoids `tool_choice`, which DeepSeek's thinking mode rejects. The `_SQL_SYSTEM` prompt must contain the word "json" or DeepSeek returns a 400 error.
+- `QdrantRetriever` wraps `langchain-qdrant`'s `QdrantVectorStore` with a single `QdrantClient`. Uses Nebius/Qwen3-Embedding-8B via `OpenAIEmbeddings(tiktoken_enabled=False, check_embedding_ctx_length=False)`. Always initialise with `validate_collection_config=False`.
 - All I/O functions are `async def`; pure logic functions are sync.
 - `app/config.py` exposes a single `settings` singleton (Pydantic `BaseSettings`) — import it directly, never read `os.environ` elsewhere.
-- Tracing is wired in `app/main.py` lifespan via `init_tracing()` which sets up OTLP → Phoenix at startup. All subsequent spans are emitted automatically.
+- Tracing is wired in `app/main.py` lifespan via `init_tracing()` which calls `phoenix.otel.register(auto_instrument=True)` — handles LangChain instrumentation automatically; no manual `LangChainInstrumentor().instrument()` calls needed.
 
 **Data stores:**
 
 - Qdrant — vector search (local Docker service, port 6333). Client initialised in `QdrantRetriever.__init__`. Call `ensure_collection()` before first upsert.
 - Postgres — conversation history. Use SQLAlchemy async session; migrations via Alembic.
 - Redis — semantic response cache keyed by query embedding hash; TTL defaults to 3600 s.
+
+**Models (`app/models.py`):**
+
+- `TableSchema` — `table: str`, `content: str`, `metadata: dict[str, Any]`; represents a retrieved schema doc.
+- `SqlResult` — `sql: str`, `explanation: str`; structured output from the sql_generator node.
+- `ChatStreamRequest` — `question: str`; request body for `/api/v1/chat/stream`.
 
 ## Code style
 
