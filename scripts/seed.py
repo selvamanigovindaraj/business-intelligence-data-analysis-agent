@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-"""Seed script — load sample documents into Pinecone."""
+"""Seed script — load sample documents into Qdrant."""
 
 import asyncio
 from pathlib import Path
 
-from app.components.retriever import PineconeRetriever
+from app.components.retriever import QdrantRetriever
 
 
 def load_raw_docs(data_dir: Path = Path("data/raw")) -> list[str]:
@@ -14,7 +14,7 @@ def load_raw_docs(data_dir: Path = Path("data/raw")) -> list[str]:
 
 
 async def seed() -> None:
-    retriever = PineconeRetriever()
+    retriever = QdrantRetriever()
     # TODO: load, chunk, and upsert documents
     raise NotImplementedError
 

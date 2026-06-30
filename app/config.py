@@ -21,17 +21,16 @@ class Settings(BaseSettings):
     embed_base_url: str = Field("https://api.openai.com/v1", alias="EMBED_BASE_URL")
     embed_model: str = Field("text-embedding-3-small", alias="EMBED_MODEL")
 
-    # Pinecone
-    pinecone_api_key: str = Field(..., alias="PINECONE_API_KEY")
-    pinecone_index_name: str = Field("ai-agent-index", alias="PINECONE_INDEX_NAME")
-    pinecone_environment: str = Field("us-east-1-aws", alias="PINECONE_ENVIRONMENT")
+    # Qdrant
+    qdrant_url: str = Field("http://qdrant:6333", alias="QDRANT_URL")
+    qdrant_collection_name: str = Field("northwind", alias="QDRANT_COLLECTION_NAME")
 
     # Tavily
     tavily_api_key: str = Field(..., alias="TAVILY_API_KEY")
 
     # Postgres
     database_url: str = Field(
-        "postgresql+asyncpg://agent:agent_secret@postgres:5432/agent_db",
+        "postgresql+asyncpg://agent:agent_secret@postgres:5432/northwind",
         alias="DATABASE_URL",
     )
 

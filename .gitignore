@@ -32,3 +32,6 @@ Thumbs.db
 
 # Docker
 *.log
+
+# Downloaded seed data (re-generate with `make northwind`)
+db/init/northwind.sql

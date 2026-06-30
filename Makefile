@@ -1,4 +1,4 @@
-.PHONY: check build up down logs hooks install
+.PHONY: check build up down logs hooks install northwind
 
 .venv/.installed: pyproject.toml
 	uv venv
@@ -26,6 +26,9 @@ down:
 
 logs:
 	docker compose logs -f
+
+northwind: .venv/.installed
+	uv run python scripts/load_northwind.py
 
 hooks: .venv/.installed
 	uv run pre-commit install

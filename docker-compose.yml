@@ -11,6 +11,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      qdrant:
+        condition: service_started
       phoenix:
         condition: service_started
     volumes:
@@ -34,11 +36,12 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-agent}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agent_secret}
-      POSTGRES_DB: ${POSTGRES_DB:-agent_db}
+      POSTGRES_DB: ${POSTGRES_DB:-northwind}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agent}"]
       interval: 5s
@@ -62,6 +65,16 @@ services:
     networks:
       - agent-net
 
+  qdrant:
+    image: qdrant/qdrant:v1.9.3
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - agent-net
+
   phoenix:
     image: arizephoenix/phoenix:latest
     ports:
@@ -78,6 +91,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  qdrant_data:
   phoenix_data:
 
 networks:

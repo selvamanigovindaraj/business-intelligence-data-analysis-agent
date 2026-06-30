@@ -6,7 +6,7 @@ from app.models import ConversationRequest, ConversationResponse
 
 
 async def run_rag(request: ConversationRequest) -> ConversationResponse:
-    """Retrieve context from Pinecone then generate a grounded answer."""
+    """Retrieve context from Qdrant then generate a grounded answer."""
     raise NotImplementedError
 
 

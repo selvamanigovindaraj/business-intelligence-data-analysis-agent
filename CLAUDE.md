@@ -49,7 +49,7 @@ HTTP POST /api/v1/chat
   → app/services/semantic_cache.py   # Redis cache lookup (skip LLM if hit)
   → app/agents/adaptive_router.py    # LangGraph graph entry point
       → _route() calls Groq (llama-3.1-8b-instant) to classify → RouteDecision enum
-      → RAG branch:       app/services/rag_pipeline.py → PineconeRetriever → DeepSeek
+      → RAG branch:       app/services/rag_pipeline.py → QdrantRetriever → DeepSeek
       → web_search branch: tools/web_search.py (Tavily) → DeepSeek
       → financial branch: tools/financial_data.py → DeepSeek
       → direct branch:    DeepSeek with no retrieval
@@ -76,7 +76,7 @@ HTTP POST /api/v1/chat
 
 **Data stores:**
 
-- Pinecone — vector search only (cloud, no local service). Client initialised lazily in `PineconeRetriever.__init__`.
+- Qdrant — vector search (local Docker service, port 6333). Client initialised in `QdrantRetriever.__init__`. Call `ensure_collection()` before first upsert.
 - Postgres — conversation history. Use SQLAlchemy async session; migrations via Alembic.
 - Redis — semantic response cache keyed by query embedding hash; TTL defaults to 3600 s.
 
@@ -93,7 +93,7 @@ HTTP POST /api/v1/chat
 
 ## Testing rules
 
-- Mock all external services (Pinecone, Redis, Postgres, Anthropic) in unit tests — never call real APIs.
+- Mock all external services (Qdrant, Redis, Postgres) in unit tests — never call real APIs.
 - `asyncio_mode = "auto"` is set in `pyproject.toml`; no `@pytest.mark.asyncio` needed.
 - Integration tests requiring live infra go in `tests/integration/` (excluded from `make check`).
 
