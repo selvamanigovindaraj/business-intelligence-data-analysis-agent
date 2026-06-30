@@ -1,12 +1,5 @@
-import { useFeedback } from "../hooks/useFeedback";
+import type { JSX } from "react";
 
-interface Props {
-  sessionId: string;
-  messageId: string;
-}
-
-export function FeedbackButtons({ sessionId, messageId }: Props): JSX.Element {
-  const { giveFeedback } = useFeedback(sessionId);
-  // TODO: implement thumbs-up/down UI with optimistic state
+export function FeedbackButtons(): JSX.Element {
   return <></>;
 }

@@ -1,10 +1,5 @@
-import type { SourceDocument } from "../types";
+import type { JSX } from "react";
 
-interface Props {
-  sources: SourceDocument[];
-}
-
-export function SourceCitations({ sources }: Props): JSX.Element {
-  // TODO: implement expandable citations UI
+export function SourceCitations(): JSX.Element {
   return <></>;
 }

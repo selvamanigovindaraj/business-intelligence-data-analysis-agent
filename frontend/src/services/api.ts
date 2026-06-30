@@ -1,21 +1,41 @@
-import type { ConversationResponse, FeedbackRequest } from "../types";
+import type { StreamEvent } from "../types";
 
-const BASE = "/api/v1";
+const BASE = "http://localhost:8000/api/v1";
 
-export async function sendMessage(
-  sessionId: string,
-  message: string
-): Promise<ConversationResponse> {
-  // TODO: implement
-  throw new Error("Not implemented");
-}
+export async function streamQuestion(
+  question: string,
+  onEvent: (event: StreamEvent) => void
+): Promise<void> {
+  const response = await fetch(`${BASE}/chat/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
 
-export async function submitFeedback(feedback: FeedbackRequest): Promise<void> {
-  // TODO: implement
-  throw new Error("Not implemented");
-}
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.body) throw new Error("No response body");
 
-export async function clearSession(sessionId: string): Promise<void> {
-  // TODO: implement
-  throw new Error("Not implemented");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        const data = line.slice(6).trim();
+        if (data) {
+          try {
+            onEvent(JSON.parse(data) as StreamEvent);
+          } catch {
+            // skip malformed lines
+          }
+        }
+      }
+    }
+  }
 }
