@@ -53,3 +53,18 @@ class RouteDecision(StrEnum):
     WEB_SEARCH = "web_search"
     FINANCIAL = "financial"
     DIRECT = "direct"
+
+
+class TableSchema(BaseModel):
+    table: str
+    content: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SqlResult(BaseModel):
+    sql: str
+    explanation: str
+
+
+class ChatStreamRequest(BaseModel):
+    question: str

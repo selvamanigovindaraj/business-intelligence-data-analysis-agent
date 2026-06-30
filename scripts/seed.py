@@ -16,7 +16,6 @@ import structlog
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from openinference.instrumentation.langchain import LangChainInstrumentor
 from opentelemetry import trace
 from pydantic import BaseModel, SecretStr
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
@@ -175,7 +174,6 @@ async def _run_pipeline(span: trace.Span) -> None:
 
 async def seed() -> None:
     provider = init_tracing()
-    LangChainInstrumentor().instrument()
     try:
         with trace.get_tracer("seed").start_as_current_span("northwind-seed") as span:
             await _run_pipeline(span)
