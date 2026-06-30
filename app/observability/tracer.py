@@ -9,13 +9,14 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from app.config import settings
 
 
-def init_tracing() -> None:
+def init_tracing() -> TracerProvider:
     """Wire up OpenTelemetry → Arize Phoenix via OTLP gRPC."""
     resource = Resource.create({"service.name": settings.phoenix_project_name})
     provider = TracerProvider(resource=resource)
     exporter = OTLPSpanExporter(endpoint=settings.phoenix_collector_endpoint, insecure=True)
     provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
+    return provider
 
 
 def get_tracer(name: str = __name__) -> trace.Tracer:

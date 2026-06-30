@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Download and load the Northwind sample database into PostgreSQL."""
+
+from __future__ import annotations
 
 import asyncio
 import os

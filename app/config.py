@@ -16,10 +16,13 @@ class Settings(BaseSettings):
     groq_api_key: str = Field(..., alias="GROQ_API_KEY")
     router_model: str = Field("llama-3.1-8b-instant", alias="ROUTER_MODEL")
 
-    # Embeddings (OpenAI-compatible — swap base_url for any provider)
-    embed_api_key: str = Field(..., alias="EMBED_API_KEY")
-    embed_base_url: str = Field("https://api.openai.com/v1", alias="EMBED_BASE_URL")
-    embed_model: str = Field("text-embedding-3-small", alias="EMBED_MODEL")
+    # Embeddings — Nebius / Qwen3 (OpenAI-compatible endpoint)
+    nebius_api_key: str = Field(..., alias="NEBIUS_API_KEY")
+    embed_base_url: str = Field(
+        "https://api.tokenfactory.nebius.com/v1/", alias="EMBED_BASE_URL"
+    )
+    embed_model: str = Field("Qwen/Qwen3-Embedding-8B", alias="EMBED_MODEL")
+    embed_dim: int = Field(4096, alias="EMBED_DIM")
 
     # Qdrant
     qdrant_url: str = Field("http://qdrant:6333", alias="QDRANT_URL")
