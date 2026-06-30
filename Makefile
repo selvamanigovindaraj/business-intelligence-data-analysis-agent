@@ -27,8 +27,8 @@ down:
 logs:
 	docker compose logs -f
 
-northwind: .venv/.installed
+northwind:
 	uv run python scripts/load_northwind.py
 
-hooks: .venv/.installed
+hooks:
 	uv run pre-commit install

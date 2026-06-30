@@ -63,5 +63,5 @@ class QdrantRetriever:
     async def delete_documents(self, ids: list[int]) -> None:
         await self._client.delete(
             collection_name=self._collection_name,
-            points_selector=PointIdsList(points=ids),
+            points_selector=PointIdsList(points=ids),  # type: ignore[arg-type]
         )

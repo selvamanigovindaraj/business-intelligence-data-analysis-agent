@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 
 import asyncpg
 import httpx
@@ -26,10 +27,30 @@ async def _fetch_sql() -> str:
     return response.text
 
 
+async def _ensure_database(conn_url: str) -> None:
+    """Create the target database if it does not exist."""
+    parsed = urlparse(conn_url)
+    db_name = parsed.path.lstrip("/")
+    maintenance_url = urlunparse(parsed._replace(path="/postgres"))
+
+    conn: asyncpg.Connection = await asyncpg.connect(maintenance_url)
+    try:
+        exists = await conn.fetchval("SELECT 1 FROM pg_database WHERE datname = $1", db_name)
+        if not exists:
+            # CREATE DATABASE cannot run inside a transaction block
+            await conn.execute(f'CREATE DATABASE "{db_name}"')
+            print(f"Created database '{db_name}'.")
+        else:
+            print(f"Database '{db_name}' already exists.")
+    finally:
+        await conn.close()
+
+
 async def load(db_url: str) -> None:
-    sql = await _fetch_sql()
     # asyncpg requires postgresql://, not postgresql+asyncpg://
     conn_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+    await _ensure_database(conn_url)
+    sql = await _fetch_sql()
     conn: asyncpg.Connection = await asyncpg.connect(conn_url)
     try:
         await conn.execute(sql)
