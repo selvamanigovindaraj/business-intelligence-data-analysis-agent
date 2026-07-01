@@ -23,8 +23,8 @@ Use only the table schemas provided to write your query.
 Return JSON with "sql" (a single SELECT statement) and "explanation" (one sentence).
 
 PostgreSQL rules you must follow:
-- Monetary columns (unit_price, freight) and the discount column are stored as REAL (double precision). \
-ROUND() does not accept double precision — always cast first: ROUND(expr::numeric, 2).
+- Monetary columns (unit_price, freight) and discount are stored as REAL (double precision).
+  ROUND() does not accept double precision — always cast first: ROUND(expr::numeric, 2).
 - Use EXTRACT(YEAR FROM col) and EXTRACT(MONTH FROM col) for date parts.
 - Use DATE_TRUNC('month', col) for monthly grouping.
 - Prefer NULLIF(denominator, 0) when dividing to avoid division-by-zero.
@@ -100,8 +100,8 @@ class SqlGraph:
         return {"sql": result.sql, "explanation": result.explanation}
 
     async def _sql_executor_node(self, state: SqlState) -> SqlState:
-        rows = await self._executor._arun(state["sql"])
-        return {"rows": rows}
+        result = await self._executor._arun(state["sql"])
+        return {"rows": result["rows"]}
 
     async def _result_explainer_node(self, state: SqlState) -> SqlState:
         rows_text = json.dumps(state["rows"][:50], default=str)

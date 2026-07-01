@@ -73,7 +73,13 @@ async def test_sql_executor_node_returns_rows() -> None:
     ):
         mock_tool = AsyncMock()
         mock_tool_cls.return_value = mock_tool
-        mock_tool._arun.return_value = [{"id": 1, "company_name": "Acme"}]
+        mock_tool._arun.return_value = {
+            "success": True,
+            "rows": [{"id": 1, "company_name": "Acme"}],
+            "row_count": 1,
+            "execution_time_ms": 5,
+            "error": None,
+        }
 
         graph = SqlGraph()
         result = await graph._sql_executor_node({"sql": "SELECT * FROM customers LIMIT 1"})
@@ -134,7 +140,13 @@ async def test_stream_emits_result_then_done() -> None:
 
         mock_tool = AsyncMock()
         mock_tool_cls.return_value = mock_tool
-        mock_tool._arun.return_value = [{"product_id": 1, "product_name": "Chai"}]
+        mock_tool._arun.return_value = {
+            "success": True,
+            "rows": [{"product_id": 1, "product_name": "Chai"}],
+            "row_count": 1,
+            "execution_time_ms": 3,
+            "error": None,
+        }
 
         graph = SqlGraph()
         events: list[dict[str, object]] = []
