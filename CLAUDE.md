@@ -55,7 +55,15 @@ HTTP POST /api/v1/chat/stream
   → app/agents/sql_graph.py          # LangGraph pipeline
       → schema_retriever node:  QdrantRetriever.retrieve(question, k=5) → list[TableSchema]
       → sql_generator node:     DeepSeek via llm.with_structured_output(SqlResult, method="json_mode")
-  → SSE stream: {"event": "result", "sql": "...", "explanation": "..."} then {"event": "done"}
+      → sql_validator node:     sql_validator.validate_sql() — sqlparse-based check (SELECT-only,
+                                table/column existence against schema metadata); sync, no I/O
+      → sql_corrector node:     (loop, bounded by _MAX_RETRIES=3) DeepSeek regenerates SQL from the
+                                full error_history, then routes back to sql_validator
+      → sql_executor node:      SqlExecutor.arun(sql) — real DB round-trip; failures also route
+                                to sql_corrector until _MAX_RETRIES is hit
+      → result_explainer node:  success path, or error_response node after 3 failed attempts
+  → SSE stream: {"event": "result", "sql": "...", "explanation": "...", "rows": [...], "answer": "..."}
+                or {"event": "error", "message": "..."} on exhausted retries, then {"event": "done"}
 ```
 
 `SqlGraph` is instantiated once at lifespan startup (`app.state.sql_graph`) and reused across requests.
@@ -94,6 +102,10 @@ HTTP POST /api/v1/chat
 - All I/O functions are `async def`; pure logic functions are sync.
 - `app/config.py` exposes a single `settings` singleton (Pydantic `BaseSettings`) — import it directly, never read `os.environ` elsewhere.
 - Tracing is wired in `app/main.py` lifespan via `init_tracing()` which calls `phoenix.otel.register(auto_instrument=True)` — handles LangChain instrumentation automatically; no manual `LangChainInstrumentor().instrument()` calls needed.
+- `init_tracing()` also explicitly calls `OpenAIInstrumentor().uninstrument()` right after `register()`. `auto_instrument=True` transitively activates `openinference-instrumentation-openai` alongside the LangChain instrumentor, which double-traces every LLM call as a second, unparented root span in Phoenix (LangChain's own instrumentation already nests these calls correctly). Do not remove this call.
+- `SqlExecutor` (`app/agents/tools/sql_executor.py`) is a plain class, **not** a LangChain `BaseTool`. It's only ever called directly from the `sql_executor` node, never LLM-dispatched — `BaseTool.arun()`'s own callback-based tracing produced a duplicate, unparented `sql_executor` span in Phoenix regardless of whether `config`/callbacks were forwarded. Do not reintroduce `BaseTool`.
+- The `sql_corrector` node's `retry_count` is attached via `config={"metadata": {"retry_count": attempt}}` on the LLM `ainvoke` call — this is what makes retry count visible/filterable as `metadata.retry_count` on Phoenix spans, rather than buried inside the raw input/output JSON blob.
+- `sql_validator.py`'s `validate_sql()` skips column-name checks on aliased expressions (`expr AS alias`) — `sqlparse`'s `get_real_name()` returns the alias itself for these, which is a newly-introduced name, not a reference to an existing schema column, so validating it against known columns produces false positives.
 
 **Data stores:**
 
@@ -103,9 +115,11 @@ HTTP POST /api/v1/chat
 
 **Models (`app/models.py`):**
 
-- `TableSchema` — `table: str`, `content: str`, `metadata: dict[str, Any]`; represents a retrieved schema doc.
-- `SqlResult` — `sql: str`, `explanation: str`; structured output from the sql_generator node.
+- `TableSchema` — `table: str`, `content: str`, `metadata: dict[str, Any]`; represents a retrieved schema doc. `metadata["columns"]` is `list[{"name": str, "data_type": str}]`, used by `sql_validator.py` for column-existence checks.
+- `SqlResult` — `sql: str`, `explanation: str`; structured output from both the sql_generator and sql_corrector nodes.
 - `ChatStreamRequest` — `question: str`; request body for `/api/v1/chat/stream`.
+
+**`SqlState` (in `sql_graph.py`)** — the LangGraph state dict for the SQL pipeline: `retry_count: int` and `error_history: Annotated[list[dict], operator.add]` (reducer-merged across corrector iterations) track the self-correction loop; `validation_error`/`execution_error` are reset to `None` on each successful correction.
 
 ## Evaluation pipeline
 
