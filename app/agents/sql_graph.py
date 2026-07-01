@@ -17,46 +17,12 @@ from app.agents.tools.sql_validator import validate_sql
 from app.components.retriever import QdrantRetriever
 from app.config import settings
 from app.models import PythonCodeBlock, SqlResult, TableSchema
+from app.prompts.registry import PromptRegistry
 
 log = structlog.get_logger()
 
 _MAX_RETRIES = 3
 _UNKNOWN_ERROR = "unknown error"
-
-_SQL_SYSTEM = """\
-You are a SQL expert for a PostgreSQL Northwind trading company database.
-Use only the table schemas provided to write your query.
-Return JSON with "sql" (a single SELECT statement) and "explanation" (one sentence).
-
-PostgreSQL rules you must follow:
-- Monetary columns (unit_price, freight) and discount are stored as REAL (double precision).
-  ROUND() does not accept double precision — always cast first: ROUND(expr::numeric, 2).
-- Use EXTRACT(YEAR FROM col) and EXTRACT(MONTH FROM col) for date parts.
-- Use DATE_TRUNC('month', col) for monthly grouping.
-- Prefer NULLIF(denominator, 0) when dividing to avoid division-by-zero.
-"""
-
-_CORRECT_SYSTEM = """\
-You are a SQL expert correcting a failed PostgreSQL query for the Northwind database.
-Analyse the full error trail and the schema, then produce a corrected SELECT statement.
-Return JSON with "sql" (the corrected SELECT) and "explanation" \
-(what was wrong and what was changed).
-"""
-
-_EXPLAIN_SYSTEM = (
-    "You are a data analyst. Given the question, SQL query, and its results, "
-    "provide a clear and concise answer in plain English."
-)
-
-_PYTHON_AGENT_SYSTEM = """\
-You are a data analyst writing pandas code to analyse SQL query results.
-A variable `df` (a pandas.DataFrame) is already populated with the query results — do not \
-create it yourself.
-Write code that computes the requested analysis and assigns the final answer to a variable \
-named `result`.
-Return JSON with "code" (the pandas script) and "expected_output_description" (one sentence \
-describing what `result` will contain).
-"""
 
 
 class SqlState(TypedDict, total=False):
@@ -101,6 +67,7 @@ class SqlGraph:
         self._retriever = QdrantRetriever()
         self._executor = SqlExecutor()
         self._python_executor = PythonExecutor()
+        self._prompts = PromptRegistry()
         self._llm = ChatOpenAI(
             model=settings.llm_model,
             base_url=settings.deepseek_base_url,
@@ -152,7 +119,7 @@ class SqlGraph:
     async def _sql_generator_node(self, state: SqlState) -> SqlState:
         schemas = state["schemas"]
         schema_text = "\n\n".join(s.content for s in schemas)
-        system = f"{_SQL_SYSTEM}\nRelevant schemas:\n{schema_text}"
+        system = self._prompts.get("sql").format(schema_text=schema_text)
         result: SqlResult = await self._sql_chain.ainvoke([  # type: ignore[assignment]
             SystemMessage(content=system),
             HumanMessage(content=state["question"]),
@@ -175,8 +142,8 @@ class SqlGraph:
         history_text = "\n".join(
             f"Attempt {e['attempt']}: {e['error']!r} on SQL: {e['sql']!r}" for e in history
         ) or "None"
-        system = (
-            f"{_CORRECT_SYSTEM}\nError trail:\n{history_text}\n\nRelevant schemas:\n{schema_text}"
+        system = self._prompts.get("sql_correct").format(
+            history_text=history_text, schema_text=schema_text
         )
         result: SqlResult = await self._sql_chain.ainvoke(  # type: ignore[assignment]
             [
@@ -206,7 +173,7 @@ class SqlGraph:
         rows_text = json.dumps(state["rows"][:50], default=str)
         human = f"Question: {state['question']}\nSQL: {state['sql']}\nResults:\n{rows_text}"
         response = await self._llm.ainvoke([
-            SystemMessage(content=_EXPLAIN_SYSTEM),
+            SystemMessage(content=self._prompts.get("sql_explain").format()),
             HumanMessage(content=human),
         ])
         answer: str = response.content  # type: ignore[assignment]
@@ -217,7 +184,10 @@ class SqlGraph:
         rows_text = json.dumps(state["rows"][:50], default=str)
         human = f"Question: {state['question']}\nResults:\n{rows_text}"
         result: PythonCodeBlock = await self._python_chain.ainvoke(  # type: ignore[assignment]
-            [SystemMessage(content=_PYTHON_AGENT_SYSTEM), HumanMessage(content=human)]
+            [
+                SystemMessage(content=self._prompts.get("python_agent").format()),
+                HumanMessage(content=human),
+            ]
         )
         log.info("python code generated", description=result.expected_output_description)
         return {"python_code": result.code}

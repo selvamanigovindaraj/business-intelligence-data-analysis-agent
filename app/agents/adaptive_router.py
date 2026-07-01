@@ -42,7 +42,7 @@ def _route(state: AgentState) -> RouteDecision:
     registry = PromptRegistry()
     message = state.get("message", "")
     result = llm.invoke([
-        {"role": "system", "content": registry.get("router")},
+        {"role": "system", "content": registry.get("router").format()},
         {"role": "user", "content": message},
     ])
     raw = str(result.content).strip().lower()
