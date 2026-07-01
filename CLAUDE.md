@@ -31,6 +31,12 @@ uv run pytest --cov=app               # with coverage
 
 # Seed vector store
 python scripts/seed.py
+
+# Evaluation
+make eval                    # full 26-question RAGAS eval
+make eval LIMIT=5            # smoke-test: first 5 questions
+uv run python scripts/run_eval.py --seed-only   # upload dataset only
+uv run python scripts/run_eval.py --eval-only   # skip seed, run eval
 ```
 
 ## Workflow
@@ -100,6 +106,42 @@ HTTP POST /api/v1/chat
 - `TableSchema` — `table: str`, `content: str`, `metadata: dict[str, Any]`; represents a retrieved schema doc.
 - `SqlResult` — `sql: str`, `explanation: str`; structured output from the sql_generator node.
 - `ChatStreamRequest` — `question: str`; request body for `/api/v1/chat/stream`.
+
+## Evaluation pipeline
+
+### Golden dataset
+
+`evals/golden_v1.json` — 26 questions across 3 difficulty tiers (8 simple / 10 medium / 8 complex) covering the Northwind schema. Each entry has `id`, `difficulty`, `question`, `reference_sql`, `reference_tables`, `reference_answer`.
+
+### How it works
+
+```text
+scripts/run_eval.py
+  Phase 1 — collect:  SqlGraph._graph.ainvoke() for all questions (async, sequential)
+  Phase 2 — dataset:  get_or_create_dataset() uploads to Phoenix (idempotent)
+  Phase 3 — experiment: async_run_experiment() runs task + evaluators together
+      Code evaluators (deterministic):
+          sql_generated       — was any SQL produced?
+          answer_complete     — is the answer >10 chars?
+          rows_returned       — did the executor return rows?
+      RAGAS LLM evaluators (require live LLM + embeddings):
+          answer_relevancy    — RAGAS AnswerRelevancy; contexts = [question, answer]
+          faithfulness        — RAGAS Faithfulness; contexts = actual SQL result rows
+          context_precision   — RAGAS ContextPrecisionWithoutReference; contexts = retrieved schemas
+```
+
+Results appear in Arize Phoenix → Experiments UI at `http://localhost:6006`.
+
+### Key implementation notes
+
+- **Pre-collection pattern**: all `SqlGraph` outputs are collected before `async_run_experiment`. The task function is a sync dict lookup. This avoids async nesting issues with Phoenix's experiment runner.
+- **`AsyncOpenAI` required** for RAGAS: `abatch_score` calls `agenerate()` internally, which requires an async client. Pass `openai.AsyncOpenAI(base_url=..., api_key=...)` to `llm_factory` and `RagasOpenAIEmbeddings`.
+- **`async_run_experiment` needs `client=AsyncClient(...)`** passed explicitly — it does not inherit the sync `Client`.
+- **`_RAGAS_MAX_TOKENS = 4096`** — default 1024 truncates faithfulness JSON on long answers.
+- **`concurrency=3`** — higher values overwhelm the LLM with concurrent faithfulness calls and trigger `IncompleteOutputException`.
+- **Vertexai shim** at top of `run_eval.py`: ragas 0.4 hard-imports `langchain_community.chat_models.vertexai` removed in langchain_community 0.4+; patched via `sys.modules` stubs before any ragas import.
+- **`@create_evaluator` closures in `_build_ragas_evaluators()`** unavoidably capture metric instances (`ar`, `fa`, `cp`). All scoring business logic is extracted to module-level `_score_*` functions; the closures are thin 3-line adapters — the minimum needed to satisfy the library.
+- **PostgreSQL casting**: Northwind monetary columns (`unit_price`, `freight`, `discount`) are stored as `REAL`. `ROUND()` does not accept `double precision` — always cast: `ROUND(expr::numeric, 2)`. This rule is baked into `_SQL_SYSTEM` in `sql_graph.py`.
 
 ## Code style
 
