@@ -39,6 +39,10 @@ def _collect_select_cols(token: Any, cols: set[str]) -> None:
         for ident in token.get_identifiers():
             _collect_select_cols(ident, cols)
     elif isinstance(token, Identifier):
+        # aliased expression (e.g. `a || b AS name`) → get_real_name returns the alias,
+        # a newly-introduced name rather than an existing column reference — skip it
+        if token.get_alias():  # type: ignore[no-untyped-call]
+            return
         # table.col → get_real_name returns the column name (strips qualifier)
         # function call → first token is a Function instance → skip
         if isinstance(token.tokens[0], Function):

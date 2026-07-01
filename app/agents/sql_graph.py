@@ -20,6 +20,7 @@ from app.models import SqlResult, TableSchema
 log = structlog.get_logger()
 
 _MAX_RETRIES = 3
+_UNKNOWN_ERROR = "unknown error"
 
 _SQL_SYSTEM = """\
 You are a SQL expert for a PostgreSQL Northwind trading company database.
@@ -140,7 +141,7 @@ class SqlGraph:
 
     async def _sql_corrector_node(self, state: SqlState) -> SqlState:
         failed_sql = state["sql"]
-        error = state.get("validation_error") or state.get("execution_error") or "unknown error"
+        error = state.get("validation_error") or state.get("execution_error") or _UNKNOWN_ERROR
         attempt = state.get("retry_count", 0) + 1
         schema_text = "\n\n".join(s.content for s in state.get("schemas", []))
         history = state.get("error_history", [])
@@ -150,10 +151,13 @@ class SqlGraph:
         system = (
             f"{_CORRECT_SYSTEM}\nError trail:\n{history_text}\n\nRelevant schemas:\n{schema_text}"
         )
-        result: SqlResult = await self._sql_chain.ainvoke([  # type: ignore[assignment]
-            SystemMessage(content=system),
-            HumanMessage(content=f"Failed SQL:\n{failed_sql}\n\nError:\n{error}"),
-        ])
+        result: SqlResult = await self._sql_chain.ainvoke(  # type: ignore[assignment]
+            [
+                SystemMessage(content=system),
+                HumanMessage(content=f"Failed SQL:\n{failed_sql}\n\nError:\n{error}"),
+            ],
+            config={"metadata": {"retry_count": attempt}},
+        )
         log.info("sql corrected", attempt=attempt)
         return {
             "sql": result.sql,
@@ -185,7 +189,7 @@ class SqlGraph:
     async def _error_response_node(self, state: SqlState) -> SqlState:
         attempts = state.get("retry_count", 0)
         final_error = (
-            state.get("execution_error") or state.get("validation_error") or "unknown error"
+            state.get("execution_error") or state.get("validation_error") or _UNKNOWN_ERROR
         )
         answer = (
             f"Could not generate a valid answer after {attempts} attempt(s). "

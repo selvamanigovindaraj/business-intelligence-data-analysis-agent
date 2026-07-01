@@ -83,3 +83,8 @@ def test_qualified_column_passes() -> None:
 
 def test_aggregate_function_passes() -> None:
     assert validate_sql("SELECT COUNT(*), SUM(freight) FROM orders", _SCHEMAS) is None
+
+
+def test_aliased_expression_passes() -> None:
+    sql = "SELECT customer_id || '-' || company_name AS display_name FROM customers"
+    assert validate_sql(sql, _SCHEMAS) is None

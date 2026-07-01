@@ -150,6 +150,33 @@ async def test_sql_corrector_node_accumulates_error_history() -> None:
         assert result["error_history"][0]["attempt"] == 2
 
 
+async def test_sql_corrector_node_attaches_retry_count_to_trace_metadata() -> None:
+    with (
+        patch("app.agents.sql_graph.QdrantRetriever"),
+        patch("app.agents.sql_graph.SqlExecutor"),
+        patch("app.agents.sql_graph.ChatOpenAI") as mock_llm_cls,
+    ):
+        mock_llm = MagicMock()
+        mock_llm_cls.return_value = mock_llm
+        mock_chain = AsyncMock()
+        mock_llm.with_structured_output.return_value = mock_chain
+        mock_chain.ainvoke.return_value = SqlResult(sql="SELECT 1", explanation="Fixed.")
+
+        graph = SqlGraph()
+        state = {
+            "sql": "STILL BAD",
+            "validation_error": "Unknown table(s): foo",
+            "execution_error": None,
+            "schemas": [],
+            "retry_count": 1,
+            "error_history": [],
+        }
+        await graph._sql_corrector_node(state)
+
+        _, kwargs = mock_chain.ainvoke.call_args
+        assert kwargs["config"]["metadata"]["retry_count"] == 2
+
+
 # ---------------------------------------------------------------------------
 # Error response node
 # ---------------------------------------------------------------------------
