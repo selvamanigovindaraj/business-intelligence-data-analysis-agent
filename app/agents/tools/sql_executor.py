@@ -4,8 +4,6 @@ import time
 from typing import Any
 
 import structlog
-from langchain_core.tools import BaseTool
-from pydantic import PrivateAttr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
@@ -14,23 +12,16 @@ from app.config import settings
 log = structlog.get_logger()
 
 
-class SqlExecutorTool(BaseTool):
+class SqlExecutor:
     """Execute a SELECT SQL query against the Northwind Postgres database and return rows."""
 
-    name: str = "sql_executor"
-    description: str = (
-        "Execute a SELECT SQL query against the Northwind Postgres database and return rows."
-    )
+    def __init__(self) -> None:
+        # Not a LangChain BaseTool: this is called directly from one graph node only,
+        # never dispatched by an LLM, and BaseTool's own callback-based tracing produced
+        # an unparented duplicate trace alongside the LangGraph node's own span.
+        self._engine: AsyncEngine = create_async_engine(settings.database_url, pool_pre_ping=True)
 
-    _engine: AsyncEngine = PrivateAttr()
-
-    def model_post_init(self, __context: Any) -> None:
-        self._engine = create_async_engine(settings.database_url, pool_pre_ping=True)
-
-    def _run(self, sql: str) -> dict[str, Any]:
-        raise NotImplementedError("Use _arun for async execution.")
-
-    async def _arun(self, sql: str) -> dict[str, Any]:
+    async def arun(self, sql: str) -> dict[str, Any]:
         start = time.monotonic()
         try:
             async with self._engine.connect() as conn:
