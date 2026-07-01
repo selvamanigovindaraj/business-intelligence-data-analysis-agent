@@ -21,6 +21,13 @@ _SQL_SYSTEM = """\
 You are a SQL expert for a PostgreSQL Northwind trading company database.
 Use only the table schemas provided to write your query.
 Return JSON with "sql" (a single SELECT statement) and "explanation" (one sentence).
+
+PostgreSQL rules you must follow:
+- Monetary columns (unit_price, freight) and the discount column are stored as REAL (double precision). \
+ROUND() does not accept double precision — always cast first: ROUND(expr::numeric, 2).
+- Use EXTRACT(YEAR FROM col) and EXTRACT(MONTH FROM col) for date parts.
+- Use DATE_TRUNC('month', col) for monthly grouping.
+- Prefer NULLIF(denominator, 0) when dividing to avoid division-by-zero.
 """
 
 _EXPLAIN_SYSTEM = (

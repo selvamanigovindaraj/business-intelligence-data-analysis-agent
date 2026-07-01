@@ -1,4 +1,4 @@
-.PHONY: check build up down logs hooks install northwind seed
+.PHONY: check build up down logs hooks install northwind seed eval
 
 .venv/.installed: pyproject.toml
 	uv venv
@@ -35,6 +35,15 @@ seed:
 	QDRANT_URL=http://localhost:6333 \
 	PHOENIX_COLLECTOR_ENDPOINT=http://localhost:4317 \
 	uv run python scripts/seed.py
+
+# Usage: make eval              → full 26-question run
+#        make eval LIMIT=5     → smoke-test with first 5 questions
+LIMIT ?= 0
+eval:
+	DATABASE_URL=postgresql+asyncpg://agent:agent_secret@localhost:5432/northwind \
+	QDRANT_URL=http://localhost:6333 \
+	PHOENIX_COLLECTOR_ENDPOINT=http://localhost:4317 \
+	uv run python scripts/run_eval.py $(if $(filter-out 0,$(LIMIT)),--limit $(LIMIT),)
 
 hooks:
 	uv run pre-commit install

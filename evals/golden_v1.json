@@ -1,0 +1,210 @@
+[
+  {
+    "id": 1,
+    "difficulty": "simple",
+    "question": "What is the total revenue for all orders?",
+    "reference_sql": "SELECT ROUND(SUM(unit_price * quantity * (1 - discount))::numeric, 2) AS total_revenue FROM order_details",
+    "reference_tables": ["order_details"],
+    "reference_answer": "The total revenue across all orders is calculated by summing unit_price × quantity × (1 − discount) across every row in order_details, yielding a dollar amount in the range of 1.2–1.4 million."
+  },
+  {
+    "id": 2,
+    "difficulty": "simple",
+    "question": "How many orders were placed in 1997?",
+    "reference_sql": "SELECT COUNT(*) AS order_count FROM orders WHERE EXTRACT(YEAR FROM order_date) = 1997",
+    "reference_tables": ["orders"],
+    "reference_answer": "There were approximately 408 orders placed in 1997, determined by counting rows in the orders table where order_date falls in the year 1997."
+  },
+  {
+    "id": 3,
+    "difficulty": "simple",
+    "question": "Which country has the most customers?",
+    "reference_sql": "SELECT country, COUNT(*) AS customer_count FROM customers GROUP BY country ORDER BY customer_count DESC LIMIT 1",
+    "reference_tables": ["customers"],
+    "reference_answer": "The USA has the most customers in the Northwind database, with more customers than any other single country."
+  },
+  {
+    "id": 4,
+    "difficulty": "simple",
+    "question": "What is the average unit price across all products?",
+    "reference_sql": "SELECT ROUND(AVG(unit_price)::numeric, 2) AS avg_unit_price FROM products",
+    "reference_tables": ["products"],
+    "reference_answer": "The average unit price across all products is approximately $28–$29, computed from the unit_price column in the products table."
+  },
+  {
+    "id": 5,
+    "difficulty": "simple",
+    "question": "How many products are currently out of stock?",
+    "reference_sql": "SELECT COUNT(*) AS out_of_stock_count FROM products WHERE units_in_stock = 0",
+    "reference_tables": ["products"],
+    "reference_answer": "A small number of products (typically fewer than 10) currently have units_in_stock equal to zero, indicating they are out of stock."
+  },
+  {
+    "id": 6,
+    "difficulty": "simple",
+    "question": "Which employee has been with the company the longest?",
+    "reference_sql": "SELECT first_name, last_name, hire_date FROM employees ORDER BY hire_date ASC LIMIT 1",
+    "reference_tables": ["employees"],
+    "reference_answer": "The employee with the earliest hire_date has been with the company the longest. This can be found by ordering employees by hire_date ascending and taking the first row."
+  },
+  {
+    "id": 7,
+    "difficulty": "simple",
+    "question": "What is the total number of distinct product categories?",
+    "reference_sql": "SELECT COUNT(*) AS category_count FROM categories",
+    "reference_tables": ["categories"],
+    "reference_answer": "There are 8 distinct product categories in the Northwind database."
+  },
+  {
+    "id": 8,
+    "difficulty": "simple",
+    "question": "How many orders were shipped to Germany?",
+    "reference_sql": "SELECT COUNT(*) AS orders_to_germany FROM orders WHERE ship_country = 'Germany'",
+    "reference_tables": ["orders"],
+    "reference_answer": "A specific count of orders had ship_country equal to 'Germany', representing one of the larger shipping destinations in the dataset."
+  },
+  {
+    "id": 9,
+    "difficulty": "medium",
+    "question": "What are the top 5 products by total revenue?",
+    "reference_sql": "SELECT p.product_name, ROUND(SUM(od.unit_price * od.quantity * (1 - od.discount))::numeric, 2) AS revenue FROM order_details od JOIN products p ON od.product_id = p.product_id GROUP BY p.product_id, p.product_name ORDER BY revenue DESC LIMIT 5",
+    "reference_tables": ["order_details", "products"],
+    "reference_answer": "The top 5 products by total revenue are listed with their product names and revenue figures. Côte de Blaye is typically the highest-revenue product. Results join order_details and products."
+  },
+  {
+    "id": 10,
+    "difficulty": "medium",
+    "question": "Which customer has placed the most orders?",
+    "reference_sql": "SELECT c.company_name, COUNT(o.order_id) AS order_count FROM customers c JOIN orders o ON c.customer_id = o.customer_id GROUP BY c.customer_id, c.company_name ORDER BY order_count DESC LIMIT 1",
+    "reference_tables": ["customers", "orders"],
+    "reference_answer": "The customer with the most orders is identified by joining customers and orders, grouping by customer, and ordering by count descending. Save-a-lot Markets typically holds this position."
+  },
+  {
+    "id": 11,
+    "difficulty": "medium",
+    "question": "What is the total revenue per product category?",
+    "reference_sql": "SELECT cat.category_name, ROUND(SUM(od.unit_price * od.quantity * (1 - od.discount))::numeric, 2) AS revenue FROM order_details od JOIN products p ON od.product_id = p.product_id JOIN categories cat ON p.category_id = cat.category_id GROUP BY cat.category_id, cat.category_name ORDER BY revenue DESC",
+    "reference_tables": ["order_details", "products", "categories"],
+    "reference_answer": "Revenue is listed for each of the 8 product categories, computed by joining order_details → products → categories. Beverages and Dairy Products are typically among the top categories."
+  },
+  {
+    "id": 12,
+    "difficulty": "medium",
+    "question": "Which employee generated the highest total sales?",
+    "reference_sql": "SELECT e.first_name, e.last_name, ROUND(SUM(od.unit_price * od.quantity * (1 - od.discount))::numeric, 2) AS total_sales FROM employees e JOIN orders o ON e.employee_id = o.employee_id JOIN order_details od ON o.order_id = od.order_id GROUP BY e.employee_id, e.first_name, e.last_name ORDER BY total_sales DESC LIMIT 1",
+    "reference_tables": ["employees", "orders", "order_details"],
+    "reference_answer": "The employee with the highest total sales is found by joining employees → orders → order_details and summing revenue per employee. The result includes the employee name and total sales figure."
+  },
+  {
+    "id": 13,
+    "difficulty": "medium",
+    "question": "What is the average order value per country?",
+    "reference_sql": "SELECT o.ship_country, ROUND(AVG(order_rev)::numeric, 2) AS avg_order_value FROM (SELECT o.order_id, o.ship_country, SUM(od.unit_price * od.quantity * (1 - od.discount)) AS order_rev FROM orders o JOIN order_details od ON o.order_id = od.order_id GROUP BY o.order_id, o.ship_country) sub GROUP BY ship_country ORDER BY avg_order_value DESC",
+    "reference_tables": ["orders", "order_details"],
+    "reference_answer": "The average order value per shipping destination country is computed by first aggregating revenue per order, then averaging those values by ship_country."
+  },
+  {
+    "id": 14,
+    "difficulty": "medium",
+    "question": "Which supplier provides the most products?",
+    "reference_sql": "SELECT s.company_name, COUNT(p.product_id) AS product_count FROM suppliers s JOIN products p ON s.supplier_id = p.supplier_id GROUP BY s.supplier_id, s.company_name ORDER BY product_count DESC LIMIT 1",
+    "reference_tables": ["suppliers", "products"],
+    "reference_answer": "The supplier with the most products is found by joining suppliers to products and counting. Pavlova Ltd and a few others typically supply the largest number of products."
+  },
+  {
+    "id": 15,
+    "difficulty": "medium",
+    "question": "What is the revenue contribution of each category as a percentage of total?",
+    "reference_sql": "WITH total AS (SELECT SUM(unit_price * quantity * (1 - discount)) AS t FROM order_details) SELECT cat.category_name, ROUND((SUM(od.unit_price * od.quantity * (1 - od.discount)) / total.t * 100)::numeric, 2) AS pct FROM order_details od JOIN products p ON od.product_id = p.product_id JOIN categories cat ON p.category_id = cat.category_id CROSS JOIN total GROUP BY cat.category_id, cat.category_name, total.t ORDER BY pct DESC",
+    "reference_tables": ["order_details", "products", "categories"],
+    "reference_answer": "Each of the 8 categories is listed with its percentage share of total revenue. Beverages category typically accounts for the largest share, around 20%+."
+  },
+  {
+    "id": 16,
+    "difficulty": "medium",
+    "question": "Which 3 customers have the highest lifetime value?",
+    "reference_sql": "SELECT c.company_name, ROUND(SUM(od.unit_price * od.quantity * (1 - od.discount))::numeric, 2) AS lifetime_value FROM customers c JOIN orders o ON c.customer_id = o.customer_id JOIN order_details od ON o.order_id = od.order_id GROUP BY c.customer_id, c.company_name ORDER BY lifetime_value DESC LIMIT 3",
+    "reference_tables": ["customers", "orders", "order_details"],
+    "reference_answer": "The 3 customers with the highest lifetime value are identified by joining customers → orders → order_details and summing revenue. Ernst Handel, QUICK-Stop, and Save-a-lot Markets are typically among the top."
+  },
+  {
+    "id": 17,
+    "difficulty": "medium",
+    "question": "What is the average discount given per product category?",
+    "reference_sql": "SELECT cat.category_name, ROUND(AVG(od.discount * 100)::numeric, 2) AS avg_discount_pct FROM order_details od JOIN products p ON od.product_id = p.product_id JOIN categories cat ON p.category_id = cat.category_id GROUP BY cat.category_id, cat.category_name ORDER BY avg_discount_pct DESC",
+    "reference_tables": ["order_details", "products", "categories"],
+    "reference_answer": "The average discount percentage for each of the 8 product categories, computed from the discount field in order_details joined through products to categories."
+  },
+  {
+    "id": 18,
+    "difficulty": "medium",
+    "question": "Which shipper delivered the most orders?",
+    "reference_sql": "SELECT s.company_name, COUNT(o.order_id) AS order_count FROM shippers s JOIN orders o ON s.shipper_id = o.ship_via GROUP BY s.shipper_id, s.company_name ORDER BY order_count DESC LIMIT 1",
+    "reference_tables": ["shippers", "orders"],
+    "reference_answer": "The shipper that delivered the most orders is found by joining shippers to orders via ship_via = shipper_id. United Package typically has the highest order count among the 3 shippers."
+  },
+  {
+    "id": 19,
+    "difficulty": "complex",
+    "question": "What is the month-over-month revenue growth for 1997?",
+    "reference_sql": "WITH monthly AS (SELECT DATE_TRUNC('month', o.order_date) AS month, SUM(od.unit_price * od.quantity * (1 - od.discount)) AS revenue FROM orders o JOIN order_details od ON o.order_id = od.order_id WHERE EXTRACT(YEAR FROM o.order_date) = 1997 GROUP BY 1) SELECT TO_CHAR(month, 'YYYY-MM') AS month, ROUND(revenue::numeric, 2) AS revenue, ROUND((revenue - LAG(revenue) OVER (ORDER BY month)) / NULLIF(LAG(revenue) OVER (ORDER BY month), 0) * 100, 2) AS mom_growth_pct FROM monthly ORDER BY month",
+    "reference_tables": ["orders", "order_details"],
+    "reference_answer": "A month-by-month table for 1997 showing each month's revenue and the percentage change from the prior month, using a LAG window function. Covers January through December 1997."
+  },
+  {
+    "id": 20,
+    "difficulty": "complex",
+    "question": "Which products have seen a decline in sales in the second half of 1997 vs first half?",
+    "reference_sql": "WITH halves AS (SELECT od.product_id, SUM(CASE WHEN EXTRACT(MONTH FROM o.order_date) <= 6 THEN od.unit_price * od.quantity * (1 - od.discount) ELSE 0 END) AS h1, SUM(CASE WHEN EXTRACT(MONTH FROM o.order_date) > 6 THEN od.unit_price * od.quantity * (1 - od.discount) ELSE 0 END) AS h2 FROM orders o JOIN order_details od ON o.order_id = od.order_id WHERE EXTRACT(YEAR FROM o.order_date) = 1997 GROUP BY od.product_id) SELECT p.product_name, ROUND(h1::numeric, 2) AS h1_revenue, ROUND(h2::numeric, 2) AS h2_revenue, ROUND((h2 - h1)::numeric, 2) AS change FROM halves h JOIN products p ON h.product_id = p.product_id WHERE h2 < h1 ORDER BY (h1 - h2) DESC",
+    "reference_tables": ["orders", "order_details", "products"],
+    "reference_answer": "Products where H2 1997 revenue was lower than H1 1997 revenue are listed with both half-year totals and the decline amount. Multiple products typically show this pattern."
+  },
+  {
+    "id": 21,
+    "difficulty": "complex",
+    "question": "Rank employees by total sales within each country they've sold to.",
+    "reference_sql": "SELECT e.first_name, e.last_name, o.ship_country, ROUND(SUM(od.unit_price * od.quantity * (1 - od.discount))::numeric, 2) AS total_sales, RANK() OVER (PARTITION BY o.ship_country ORDER BY SUM(od.unit_price * od.quantity * (1 - od.discount)) DESC) AS rank_in_country FROM employees e JOIN orders o ON e.employee_id = o.employee_id JOIN order_details od ON o.order_id = od.order_id GROUP BY e.employee_id, e.first_name, e.last_name, o.ship_country ORDER BY o.ship_country, rank_in_country",
+    "reference_tables": ["employees", "orders", "order_details"],
+    "reference_answer": "A result set showing each employee's rank within each shipping destination country, using RANK() OVER (PARTITION BY ship_country). Multiple rows per country, one per employee who made sales there."
+  },
+  {
+    "id": 22,
+    "difficulty": "complex",
+    "question": "What is the running total revenue by month for 1997?",
+    "reference_sql": "WITH monthly AS (SELECT DATE_TRUNC('month', o.order_date) AS month, SUM(od.unit_price * od.quantity * (1 - od.discount)) AS revenue FROM orders o JOIN order_details od ON o.order_id = od.order_id WHERE EXTRACT(YEAR FROM o.order_date) = 1997 GROUP BY 1) SELECT TO_CHAR(month, 'YYYY-MM') AS month, ROUND(revenue::numeric, 2) AS monthly_revenue, ROUND(SUM(revenue) OVER (ORDER BY month)::numeric, 2) AS running_total FROM monthly ORDER BY month",
+    "reference_tables": ["orders", "order_details"],
+    "reference_answer": "A table with 12 rows (one per month of 1997) showing monthly revenue and the cumulative running total revenue through that month, computed using SUM() OVER (ORDER BY month)."
+  },
+  {
+    "id": 23,
+    "difficulty": "complex",
+    "question": "Which customers haven't placed an order in the last 6 months of the dataset?",
+    "reference_sql": "WITH last_date AS (SELECT MAX(order_date) AS max_date FROM orders) SELECT c.company_name FROM customers c WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.customer_id AND o.order_date >= (SELECT max_date - INTERVAL '6 months' FROM last_date)) ORDER BY c.company_name",
+    "reference_tables": ["customers", "orders"],
+    "reference_answer": "A list of customer company names that placed no orders in the 6-month window ending at the latest order date in the dataset. Several customers are typically inactive in this window."
+  },
+  {
+    "id": 24,
+    "difficulty": "complex",
+    "question": "What is the revenue per order for the top 10 orders, and how does each compare to the average order value?",
+    "reference_sql": "WITH order_rev AS (SELECT o.order_id, SUM(od.unit_price * od.quantity * (1 - od.discount)) AS revenue FROM orders o JOIN order_details od ON o.order_id = od.order_id GROUP BY o.order_id), avg_rev AS (SELECT AVG(revenue) AS avg_order_revenue FROM order_rev) SELECT o.order_id, ROUND(o.revenue::numeric, 2) AS order_revenue, ROUND(a.avg_order_revenue::numeric, 2) AS avg_order_revenue, ROUND((o.revenue - a.avg_order_revenue)::numeric, 2) AS diff_from_avg FROM order_rev o CROSS JOIN avg_rev a ORDER BY o.revenue DESC LIMIT 10",
+    "reference_tables": ["orders", "order_details"],
+    "reference_answer": "The top 10 highest-revenue orders with their individual revenue, the overall average order revenue, and the difference. Each of the top 10 is significantly above the average."
+  },
+  {
+    "id": 25,
+    "difficulty": "complex",
+    "question": "Which product category has the most consistent monthly revenue (lowest variance)?",
+    "reference_sql": "WITH monthly_cat AS (SELECT cat.category_id, cat.category_name, DATE_TRUNC('month', o.order_date) AS month, SUM(od.unit_price * od.quantity * (1 - od.discount)) AS monthly_rev FROM orders o JOIN order_details od ON o.order_id = od.order_id JOIN products p ON od.product_id = p.product_id JOIN categories cat ON p.category_id = cat.category_id GROUP BY 1, 2, 3) SELECT category_name, ROUND(VAR_POP(monthly_rev)::numeric, 2) AS revenue_variance FROM monthly_cat GROUP BY category_id, category_name ORDER BY revenue_variance ASC LIMIT 1",
+    "reference_tables": ["orders", "order_details", "products", "categories"],
+    "reference_answer": "The product category with the lowest month-to-month variance in revenue, identified using VAR_POP() on monthly revenue grouped by category. Grains/Cereals or a smaller category is likely the most consistent."
+  },
+  {
+    "id": 26,
+    "difficulty": "complex",
+    "question": "What is the year-over-year revenue change per country for customers who ordered in both years?",
+    "reference_sql": "WITH yearly AS (SELECT o.ship_country, EXTRACT(YEAR FROM o.order_date) AS yr, SUM(od.unit_price * od.quantity * (1 - od.discount)) AS revenue FROM orders o JOIN order_details od ON o.order_id = od.order_id GROUP BY 1, 2), both_years AS (SELECT ship_country FROM yearly GROUP BY ship_country HAVING COUNT(DISTINCT yr) >= 2) SELECT y.ship_country, y.yr::int AS year, ROUND(y.revenue::numeric, 2) AS revenue, ROUND((y.revenue - LAG(y.revenue) OVER (PARTITION BY y.ship_country ORDER BY y.yr))::numeric, 2) AS yoy_change FROM yearly y JOIN both_years b ON y.ship_country = b.ship_country ORDER BY y.ship_country, y.yr",
+    "reference_tables": ["orders", "order_details"],
+    "reference_answer": "Year-over-year revenue change for each country that appears in multiple years, using LAG() OVER (PARTITION BY ship_country). Countries with only one year of data are excluded."
+  }
+]
