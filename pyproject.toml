@@ -44,6 +44,8 @@ dependencies = [
     "tenacity>=8.3.0",
     "structlog>=24.1.0",
     "sqlparse>=0.5.0",
+    # Sandboxed Python execution — pandas analysis
+    "e2b-code-interpreter>=1.0.0",
 ]
 
 [project.optional-dependencies]

@@ -11,11 +11,12 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from pydantic import SecretStr
 
+from app.agents.tools.python_executor import PythonExecutor
 from app.agents.tools.sql_executor import SqlExecutor
 from app.agents.tools.sql_validator import validate_sql
 from app.components.retriever import QdrantRetriever
 from app.config import settings
-from app.models import SqlResult, TableSchema
+from app.models import PythonCodeBlock, SqlResult, TableSchema
 
 log = structlog.get_logger()
 
@@ -47,6 +48,16 @@ _EXPLAIN_SYSTEM = (
     "provide a clear and concise answer in plain English."
 )
 
+_PYTHON_AGENT_SYSTEM = """\
+You are a data analyst writing pandas code to analyse SQL query results.
+A variable `df` (a pandas.DataFrame) is already populated with the query results — do not \
+create it yourself.
+Write code that computes the requested analysis and assigns the final answer to a variable \
+named `result`.
+Return JSON with "code" (the pandas script) and "expected_output_description" (one sentence \
+describing what `result` will contain).
+"""
+
 
 class SqlState(TypedDict, total=False):
     question: str
@@ -59,12 +70,22 @@ class SqlState(TypedDict, total=False):
     error_history: Annotated[list[dict[str, Any]], operator.add]
     rows: list[dict[str, Any]]
     answer: str
+    analyze: bool
+    python_code: str
+    analysis_success: bool
+    analysis_stdout: str
+    analysis_result: str | None
+    analysis_error: str | None
 
 
 def _route_after_validation(state: SqlState) -> str:
     if not state.get("validation_error"):
         return "sql_executor"
     return "sql_corrector" if state.get("retry_count", 0) < _MAX_RETRIES else "error_response"
+
+
+def _route_after_explanation(state: SqlState) -> str:
+    return "python_agent" if state.get("analyze") else END
 
 
 def _route_after_execution(state: SqlState) -> str:
@@ -79,6 +100,7 @@ class SqlGraph:
     def __init__(self) -> None:
         self._retriever = QdrantRetriever()
         self._executor = SqlExecutor()
+        self._python_executor = PythonExecutor()
         self._llm = ChatOpenAI(
             model=settings.llm_model,
             base_url=settings.deepseek_base_url,
@@ -87,6 +109,7 @@ class SqlGraph:
         )
         # method="json_mode" avoids tool_choice, which is incompatible with DeepSeek thinking mode
         self._sql_chain = self._llm.with_structured_output(SqlResult, method="json_mode")
+        self._python_chain = self._llm.with_structured_output(PythonCodeBlock, method="json_mode")
         self._graph: Any = self._build()
 
     def _build(self) -> Any:  # Any: CompiledStateGraph not consistently exported
@@ -98,13 +121,17 @@ class SqlGraph:
         graph.add_node("sql_executor", self._sql_executor_node)
         graph.add_node("result_explainer", self._result_explainer_node)
         graph.add_node("error_response", self._error_response_node)
+        graph.add_node("python_agent", self._python_agent_node)
+        graph.add_node("python_executor", self._python_executor_node)
         graph.set_entry_point("schema_retriever")
         graph.add_edge("schema_retriever", "sql_generator")
         graph.add_edge("sql_generator", "sql_validator")
         graph.add_conditional_edges("sql_validator", _route_after_validation)
         graph.add_edge("sql_corrector", "sql_validator")
         graph.add_conditional_edges("sql_executor", _route_after_execution)
-        graph.add_edge("result_explainer", END)
+        graph.add_conditional_edges("result_explainer", _route_after_explanation)
+        graph.add_edge("python_agent", "python_executor")
+        graph.add_edge("python_executor", END)
         graph.add_edge("error_response", END)
         return graph.compile()
 
@@ -186,6 +213,30 @@ class SqlGraph:
         log.info("result explained", answer_len=len(answer))
         return {"answer": answer}
 
+    async def _python_agent_node(self, state: SqlState) -> SqlState:
+        rows_text = json.dumps(state["rows"][:50], default=str)
+        human = f"Question: {state['question']}\nResults:\n{rows_text}"
+        result: PythonCodeBlock = await self._python_chain.ainvoke(  # type: ignore[assignment]
+            [SystemMessage(content=_PYTHON_AGENT_SYSTEM), HumanMessage(content=human)]
+        )
+        log.info("python code generated", description=result.expected_output_description)
+        return {"python_code": result.code}
+
+    async def _python_executor_node(self, state: SqlState) -> SqlState:
+        rows_literal = json.dumps(json.dumps(state["rows"], default=str))
+        script = (
+            f"import json\nimport pandas as pd\n"
+            f"df = pd.DataFrame(json.loads({rows_literal}))\n{state['python_code']}\nresult\n"
+        )
+        result = await self._python_executor.arun(script)
+        log.info("python code executed", success=result.success, error=result.error)
+        return {
+            "analysis_success": result.success,
+            "analysis_stdout": result.stdout,
+            "analysis_result": result.result,
+            "analysis_error": result.error,
+        }
+
     async def _error_response_node(self, state: SqlState) -> SqlState:
         attempts = state.get("retry_count", 0)
         final_error = (
@@ -198,12 +249,17 @@ class SqlGraph:
         log.warning("max retries exceeded", attempts=attempts, final_error=final_error)
         return {"answer": answer}
 
-    async def stream(self, question: str) -> AsyncGenerator[str, None]:
+    async def stream(self, question: str, analyze: bool = False) -> AsyncGenerator[str, None]:
         sql = ""
         explanation = ""
         rows: list[dict[str, Any]] = []
         async for chunk in self._graph.astream(
-            {"question": question, "retry_count": 0, "error_history": []},
+            {
+                "question": question,
+                "retry_count": 0,
+                "error_history": [],
+                "analyze": analyze,
+            },
             stream_mode="updates",
         ):
             if "sql_generator" in chunk:
@@ -222,6 +278,16 @@ class SqlGraph:
                     "explanation": explanation,
                     "rows": rows,
                     "answer": node_out.get("answer", ""),
+                }
+                yield f"data: {json.dumps(payload, default=str)}\n\n"
+            if "python_executor" in chunk:
+                node_out = chunk["python_executor"]
+                payload = {
+                    "event": "analysis",
+                    "success": node_out.get("analysis_success", False),
+                    "stdout": node_out.get("analysis_stdout", ""),
+                    "result": node_out.get("analysis_result"),
+                    "error": node_out.get("analysis_error"),
                 }
                 yield f"data: {json.dumps(payload, default=str)}\n\n"
             if "error_response" in chunk:

@@ -68,3 +68,16 @@ class SqlResult(BaseModel):
 
 class ChatStreamRequest(BaseModel):
     question: str
+    analyze: bool = False
+
+
+class PythonCodeBlock(BaseModel):
+    code: str
+    expected_output_description: str
+
+
+class PythonExecutionResult(BaseModel):
+    success: bool
+    stdout: str
+    result: str | None = None
+    error: str | None = None

@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     # Tavily
     tavily_api_key: str = Field(..., alias="TAVILY_API_KEY")
 
+    # E2B — sandboxed Python execution for pandas analysis
+    e2b_api_key: str = Field(..., alias="E2B_API_KEY")
+
     # Postgres
     database_url: str = Field(
         "postgresql+asyncpg://agent:agent_secret@postgres:5432/northwind",

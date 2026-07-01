@@ -8,9 +8,10 @@ from langchain_core.documents import Document
 from app.agents.sql_graph import (
     SqlGraph,
     _route_after_execution,
+    _route_after_explanation,
     _route_after_validation,
 )
-from app.models import SqlResult, TableSchema
+from app.models import PythonCodeBlock, PythonExecutionResult, SqlResult, TableSchema
 
 # ---------------------------------------------------------------------------
 # Routing functions (pure — no mocks needed)
@@ -43,6 +44,17 @@ def test_route_after_execution_failure_under_limit_goes_to_corrector() -> None:
 def test_route_after_execution_failure_at_limit_goes_to_error_response() -> None:
     state = {"execution_error": "syntax error", "retry_count": 3}
     assert _route_after_execution(state) == "error_response"
+
+
+def test_route_after_explanation_goes_to_python_agent_when_analyze_requested() -> None:
+    assert _route_after_explanation({"analyze": True}) == "python_agent"
+
+
+def test_route_after_explanation_ends_when_analyze_not_requested() -> None:
+    from langgraph.graph import END
+
+    assert _route_after_explanation({"analyze": False}) == END
+    assert _route_after_explanation({}) == END
 
 
 # ---------------------------------------------------------------------------
@@ -265,7 +277,7 @@ async def test_sql_generator_node_returns_sql() -> None:
 
         assert result["sql"] == "SELECT * FROM orders"
         assert result["explanation"] == "Fetches all orders."
-        mock_llm.with_structured_output.assert_called_once_with(SqlResult, method="json_mode")
+        mock_llm.with_structured_output.assert_any_call(SqlResult, method="json_mode")
 
 
 # ---------------------------------------------------------------------------
@@ -327,6 +339,65 @@ async def test_result_explainer_node_returns_answer() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Python agent / executor nodes
+# ---------------------------------------------------------------------------
+
+
+async def test_python_agent_node_returns_code() -> None:
+    with (
+        patch("app.agents.sql_graph.QdrantRetriever"),
+        patch("app.agents.sql_graph.ChatOpenAI") as mock_llm_cls,
+    ):
+        mock_llm = MagicMock()
+        mock_llm_cls.return_value = mock_llm
+        mock_chain = AsyncMock()
+        mock_llm.with_structured_output.return_value = mock_chain
+        mock_chain.ainvoke.return_value = PythonCodeBlock(
+            code="result = df['unit_price'].mean()",
+            expected_output_description="Average unit price.",
+        )
+
+        graph = SqlGraph()
+        state = {
+            "question": "What is the average unit price?",
+            "rows": [{"unit_price": 10.0}, {"unit_price": 20.0}],
+        }
+        result = await graph._python_agent_node(state)
+
+        assert result["python_code"] == "result = df['unit_price'].mean()"
+        mock_llm.with_structured_output.assert_any_call(PythonCodeBlock, method="json_mode")
+
+
+async def test_python_executor_node_returns_analysis_fields() -> None:
+    with (
+        patch("app.agents.sql_graph.QdrantRetriever"),
+        patch("app.agents.sql_graph.ChatOpenAI"),
+        patch("app.agents.sql_graph.PythonExecutor") as mock_tool_cls,
+    ):
+        mock_tool = AsyncMock()
+        mock_tool_cls.return_value = mock_tool
+        mock_tool.arun.return_value = PythonExecutionResult(
+            success=True, stdout="", result="15.0", error=None
+        )
+
+        graph = SqlGraph()
+        state = {
+            "rows": [{"unit_price": 10.0}, {"unit_price": 20.0}],
+            "python_code": "result = df['unit_price'].mean()",
+        }
+        result = await graph._python_executor_node(state)
+
+        assert result["analysis_success"] is True
+        assert result["analysis_result"] == "15.0"
+        assert result["analysis_error"] is None
+        mock_tool.arun.assert_awaited_once()
+        executed_script = mock_tool.arun.call_args.args[0]
+        assert "df = pd.DataFrame" in executed_script
+        assert "result = df['unit_price'].mean()" in executed_script
+        assert executed_script.rstrip().endswith("result")
+
+
+# ---------------------------------------------------------------------------
 # Stream integration
 # ---------------------------------------------------------------------------
 
@@ -381,6 +452,71 @@ async def test_stream_emits_result_then_done() -> None:
         assert events[0]["answer"] == "There are 5 products in the catalog."
         assert events[0]["rows"] == [{"product_id": 1, "product_name": "Chai"}]
         assert events[1]["event"] == "done"
+
+
+async def test_stream_emits_analysis_event_when_analyze_requested() -> None:
+    with (
+        patch("app.agents.sql_graph.QdrantRetriever") as mock_retriever_cls,
+        patch("app.agents.sql_graph.ChatOpenAI") as mock_llm_cls,
+        patch("app.agents.sql_graph.SqlExecutor") as mock_tool_cls,
+        patch("app.agents.sql_graph.PythonExecutor") as mock_py_tool_cls,
+    ):
+        mock_retriever = AsyncMock()
+        mock_retriever_cls.return_value = mock_retriever
+        mock_retriever.retrieve.return_value = [
+            Document(
+                page_content="Table: products\nStores product catalog.",
+                metadata={"table": "products", "type": "table"},
+            )
+        ]
+
+        mock_llm = MagicMock()
+        mock_llm_cls.return_value = mock_llm
+        mock_sql_chain = AsyncMock()
+        mock_py_chain = AsyncMock()
+
+        def structured_output(model, method):
+            return mock_py_chain if model is PythonCodeBlock else mock_sql_chain
+
+        mock_llm.with_structured_output.side_effect = structured_output
+        mock_sql_chain.ainvoke.return_value = SqlResult(
+            sql="SELECT * FROM products", explanation="Lists all products."
+        )
+        mock_py_chain.ainvoke.return_value = PythonCodeBlock(
+            code="result = len(df)", expected_output_description="Row count."
+        )
+        mock_response = MagicMock()
+        mock_response.content = "There are 5 products in the catalog."
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+
+        mock_tool = AsyncMock()
+        mock_tool_cls.return_value = mock_tool
+        mock_tool.arun.return_value = {
+            "success": True,
+            "rows": [{"product_id": 1, "product_name": "Chai"}],
+            "row_count": 1,
+            "execution_time_ms": 3,
+            "error": None,
+        }
+
+        mock_py_tool = AsyncMock()
+        mock_py_tool_cls.return_value = mock_py_tool
+        mock_py_tool.arun.return_value = PythonExecutionResult(
+            success=True, stdout="", result="1", error=None
+        )
+
+        graph = SqlGraph()
+        events: list[dict[str, object]] = []
+        async for raw in graph.stream("show all products", analyze=True):
+            line = raw.strip()
+            if line.startswith("data: "):
+                events.append(json.loads(line.removeprefix("data: ")))
+
+        assert len(events) == 3  # result, analysis, done
+        assert events[1]["event"] == "analysis"
+        assert events[1]["success"] is True
+        assert events[1]["result"] == "1"
+        assert events[2]["event"] == "done"
 
 
 async def test_stream_emits_error_event_after_max_retries() -> None:
