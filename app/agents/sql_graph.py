@@ -7,10 +7,11 @@ from typing import Any, TypedDict
 import structlog
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from langgraph.graph import StateGraph
+from langgraph.graph import END, StateGraph
 from pydantic import SecretStr
 
 from app.agents.tools.sql_executor import SqlExecutorTool
+from app.agents.tools.sql_validator import validate_sql
 from app.components.retriever import QdrantRetriever
 from app.config import settings
 from app.models import SqlResult, TableSchema
@@ -41,6 +42,7 @@ class SqlState(TypedDict, total=False):
     schemas: list[TableSchema]
     sql: str
     explanation: str
+    validation_error: str | None
     rows: list[dict[str, Any]]
     answer: str
 
@@ -65,11 +67,16 @@ class SqlGraph:
         graph: StateGraph[SqlState] = StateGraph(SqlState)
         graph.add_node("schema_retriever", self._schema_retriever_node)
         graph.add_node("sql_generator", self._sql_generator_node)
+        graph.add_node("sql_validator", self._sql_validator_node)
         graph.add_node("sql_executor", self._sql_executor_node)
         graph.add_node("result_explainer", self._result_explainer_node)
         graph.set_entry_point("schema_retriever")
         graph.add_edge("schema_retriever", "sql_generator")
-        graph.add_edge("sql_generator", "sql_executor")
+        graph.add_edge("sql_generator", "sql_validator")
+        graph.add_conditional_edges(
+            "sql_validator",
+            lambda state: END if state.get("validation_error") else "sql_executor",
+        )
         graph.add_edge("sql_executor", "result_explainer")
         graph.set_finish_point("result_explainer")
         return graph.compile()
@@ -99,6 +106,12 @@ class SqlGraph:
         log.info("sql generated", table_count=len(schemas))
         return {"sql": result.sql, "explanation": result.explanation}
 
+    async def _sql_validator_node(self, state: SqlState) -> SqlState:
+        error = validate_sql(state["sql"], state.get("schemas", []))
+        if error:
+            log.warning("sql validation failed", error=error)
+        return {"validation_error": error}
+
     async def _sql_executor_node(self, state: SqlState) -> SqlState:
         result = await self._executor._arun(state["sql"])
         return {"rows": result["rows"]}
@@ -122,6 +135,10 @@ class SqlGraph:
         ):
             if "sql_generator" in chunk:
                 sql = chunk["sql_generator"].get("sql", "")
+            if "sql_validator" in chunk:
+                error = chunk["sql_validator"].get("validation_error")
+                if error:
+                    yield f"data: {json.dumps({'event': 'validation_error', 'message': error})}\n\n"
             if "sql_executor" in chunk:
                 rows = chunk["sql_executor"].get("rows", [])
             if "result_explainer" in chunk:

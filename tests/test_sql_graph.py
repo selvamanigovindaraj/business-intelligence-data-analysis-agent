@@ -9,6 +9,72 @@ from app.agents.sql_graph import SqlGraph
 from app.models import SqlResult, TableSchema
 
 
+async def test_sql_validator_node_passes_valid_sql() -> None:
+    with (
+        patch("app.agents.sql_graph.QdrantRetriever"),
+        patch("app.agents.sql_graph.ChatOpenAI"),
+        patch("app.agents.sql_graph.validate_sql", return_value=None),
+    ):
+        graph = SqlGraph()
+        state = {
+            "sql": "SELECT * FROM orders",
+            "schemas": [TableSchema(table="orders", content="Table: orders", metadata={})],
+        }
+        result = await graph._sql_validator_node(state)
+        assert result.get("validation_error") is None
+
+
+async def test_sql_validator_node_rejects_invalid_sql() -> None:
+    with (
+        patch("app.agents.sql_graph.QdrantRetriever"),
+        patch("app.agents.sql_graph.ChatOpenAI"),
+        patch("app.agents.sql_graph.validate_sql", return_value="Unknown table(s): bogus"),
+    ):
+        graph = SqlGraph()
+        state = {
+            "sql": "SELECT * FROM bogus",
+            "schemas": [TableSchema(table="orders", content="Table: orders", metadata={})],
+        }
+        result = await graph._sql_validator_node(state)
+        assert result["validation_error"] == "Unknown table(s): bogus"
+
+
+async def test_stream_emits_validation_error_event() -> None:
+    with (
+        patch("app.agents.sql_graph.QdrantRetriever") as mock_retriever_cls,
+        patch("app.agents.sql_graph.ChatOpenAI") as mock_llm_cls,
+        patch("app.agents.sql_graph.SqlExecutorTool"),
+        patch("app.agents.sql_graph.validate_sql", return_value="Unknown table(s): bogus"),
+    ):
+        mock_retriever = AsyncMock()
+        mock_retriever_cls.return_value = mock_retriever
+        mock_retriever.retrieve.return_value = [
+            Document(
+                page_content="Table: orders\nStores orders.",
+                metadata={"table": "orders", "type": "table"},
+            )
+        ]
+        mock_llm = MagicMock()
+        mock_llm_cls.return_value = mock_llm
+        mock_chain = AsyncMock()
+        mock_llm.with_structured_output.return_value = mock_chain
+        mock_chain.ainvoke.return_value = SqlResult(
+            sql="SELECT * FROM bogus", explanation="Bad SQL."
+        )
+
+        graph = SqlGraph()
+        events: list[dict[str, object]] = []
+        async for raw in graph.stream("show bogus data"):
+            line = raw.strip()
+            if line.startswith("data: "):
+                events.append(json.loads(line.removeprefix("data: ")))
+
+        assert any(e["event"] == "validation_error" for e in events)
+        assert not any(e["event"] == "result" for e in events)
+        error_event = next(e for e in events if e["event"] == "validation_error")
+        assert "bogus" in error_event["message"]
+
+
 async def test_schema_retriever_node_returns_schemas() -> None:
     with (
         patch("app.agents.sql_graph.QdrantRetriever") as mock_retriever_cls,

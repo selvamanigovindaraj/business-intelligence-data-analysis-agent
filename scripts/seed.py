@@ -120,6 +120,7 @@ def _build_documents(
                 "type": "table",
                 "table": table,
                 "tags": ["db:northwind", f"table:{table}", "type:table"],
+                "columns": [{"name": c.name, "data_type": c.data_type} for c in columns],
             },
         )
     )
